@@ -48,6 +48,12 @@ class Company extends Resource
         return [
             ID::make()->sortable(),
 
+            Text::make('API Base URL', function () {
+                return rtrim(config('app.url'), '/') . '/api/reservaciones/' . $this->slug;
+            })
+                ->onlyOnIndex()
+                ->copyable(),
+
             new Panel('Información general', [
                 Text::make('Nombre', 'name')
                     ->sortable()
