@@ -12,6 +12,7 @@
         "laravel/nova": "^4.35.10",
         "laravel/sanctum": "^3.3",
         "laravel/tinker": "^2.8",
+        "maltekuhr/laravel-gpt": "^0.1.6",
         "obuchmann/odoo-jsonrpc": "^1.9"
     },
     "require-dev": {

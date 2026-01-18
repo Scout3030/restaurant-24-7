@@ -19,4 +19,7 @@ Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
     return $request->user();
 });
 
-Route::post('/companies/{company}/reservations/check-availability', [ReservationController::class, 'checkAvailability']);
+Route::post('/reservaciones/{company}/verificar-disponibilidad', [ReservationController::class, 'checkAvailability']);
+Route::post('/reservaciones/{company}/crear-reserva', [ReservationController::class, 'createReservation']);
+Route::post('/reservaciones/fecha-actual', [ReservationController::class, 'currentTime']);
+Route::post('/reservaciones/fecha-lenguaje-humano', [ReservationController::class, 'humanDate']);
