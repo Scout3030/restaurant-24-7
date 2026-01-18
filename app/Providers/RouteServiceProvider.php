@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Models\Company;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Foundation\Support\Providers\RouteServiceProvider as ServiceProvider;
 use Illuminate\Http\Request;
@@ -29,6 +30,11 @@ class RouteServiceProvider extends ServiceProvider
         });
 
         $this->routes(function () {
+            // Resolver {company} siempre por slug (único)
+            Route::bind('company', function (string $value) {
+                return Company::where('slug', $value)->firstOrFail();
+            });
+
             Route::middleware('api')
                 ->prefix('api')
                 ->group(base_path('routes/api.php'));

@@ -27,6 +27,11 @@ return new class extends Migration
             $table->string('appointment_status')
                 ->default('request')
                 ->after('assigned_phone_number');
+
+            $table->string('slug')
+                ->unique()
+                ->nullable()
+                ->after('name');
         });
     }
 
@@ -37,6 +42,7 @@ return new class extends Migration
     {
         Schema::table('companies', function (Blueprint $table) {
             $table->dropColumn([
+                'slug',
                 'appointment_status',
                 'assigned_phone_number',
                 'whatsapp_webhook_url',

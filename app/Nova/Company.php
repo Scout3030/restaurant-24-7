@@ -51,6 +51,12 @@ class Company extends Resource
                 ->sortable()
                 ->rules('required', 'max:255'),
 
+            Text::make('Slug', 'slug')
+                ->rules('required', 'max:255')
+                ->creationRules('unique:companies,slug')
+                ->updateRules('unique:companies,slug,{{resourceId}}')
+                ->help('Identificador único público de la empresa (usado en las URLs de la API).'),
+
             Text::make('Odoo Database', 'odoo_database')
                 ->rules('required', 'max:255')
                 ->hideFromIndex(),
@@ -77,6 +83,7 @@ class Company extends Resource
                 ->default('Atlantic/Canary'),
 
             Text::make('WhatsApp Webhook URL', 'whatsapp_webhook_url')
+                ->rules('required', 'url')
                 ->hideFromIndex(),
 
             Text::make('Assigned Phone Number', 'assigned_phone_number')
@@ -85,7 +92,7 @@ class Company extends Resource
 
             Select::make('Estado por defecto de la reserva', 'appointment_status')
                 ->options([
-                    'request' => 'Crear reserva en estado solicitado',
+                    'request' => 'Solicitado',
                     'booked'  => 'Reservado',
                 ])
                 ->displayUsingLabels()
