@@ -20,5 +20,9 @@ class Company extends Model
         'odoo_host',
         'odoo_username',
         'odoo_password',
+        'timezone',
+        'whatsapp_webhook_url',
+        'assigned_phone_number',
+        'appointment_status',
     ];
 }

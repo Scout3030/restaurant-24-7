@@ -4,6 +4,7 @@ namespace App\Nova;
 
 use Laravel\Nova\Fields\ID;
 use Laravel\Nova\Fields\Text;
+use Laravel\Nova\Fields\Select;
 use Laravel\Nova\Http\Requests\NovaRequest;
 
 class Company extends Resource
@@ -65,6 +66,31 @@ class Company extends Resource
             Text::make('Odoo Password', 'odoo_password')
                 ->rules('required', 'max:255')
                 ->onlyOnForms(),
+
+            Select::make('Timezone', 'timezone')
+                ->options([
+                    'Europe/Madrid'    => 'Europa/Madrid',
+                    'Atlantic/Canary'  => 'Atlántico/Canarias',
+                ])
+                ->displayUsingLabels()
+                ->rules('required')
+                ->default('Atlantic/Canary'),
+
+            Text::make('WhatsApp Webhook URL', 'whatsapp_webhook_url')
+                ->hideFromIndex(),
+
+            Text::make('Assigned Phone Number', 'assigned_phone_number')
+                ->nullable()
+                ->hideFromIndex(),
+
+            Select::make('Estado por defecto de la reserva', 'appointment_status')
+                ->options([
+                    'request' => 'Crear reserva en estado solicitado',
+                    'booked'  => 'Reservado',
+                ])
+                ->displayUsingLabels()
+                ->rules('required')
+                ->default('request'),
         ];
     }
 

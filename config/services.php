@@ -31,4 +31,12 @@ return [
         'region' => env('AWS_DEFAULT_REGION', 'us-east-1'),
     ],
 
+    'whatsapp' => [
+        'phone_number_id'    => env('WHATSAPP_PHONE_NUMBER_ID'),
+        'token'              => env('WHATSAPP_TOKEN'),
+        'template_name'      => env('WHATSAPP_TEMPLATE_CONFIRM', 'confirmacion_reserva_cliente'),
+        'template_language'  => env('WHATSAPP_TEMPLATE_LANG', 'es'),
+        'default_country_cc' => env('WHATSAPP_DEFAULT_CC', '+34'),
+    ],
+
 ];

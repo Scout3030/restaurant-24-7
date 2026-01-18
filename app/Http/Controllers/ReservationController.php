@@ -8,193 +8,54 @@ use App\Services\OdooService;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Http;
 use MalteKuhr\LaravelGpt\Implementations\Parts\InputText;
+
 
 class ReservationController extends Controller
 {
-    /**
-     * Verificar si hay disponibilidad para crear una reserva.
-     *
-     * Espera:
-     * - company: id de la empresa en la ruta (Route Model Binding)
-     * - date: fecha YYYY-MM-DD
-     * - time: hora HH:MM
-     * - capacity: número de personas
-     *
-     * Respuesta:
-     * - { available: bool }
-     */
-    public function checkAvailability(Company $company, Request $request)
+    /* =====================================================
+     * AVAILABILITY
+     * ===================================================== */
+    public function checkAvailability(Company $company, Request $request): JsonResponse
     {
         $data = $request->validate([
-            'date'       => 'required|date_format:Y-m-d',
-            'time'       => 'required|date_format:H:i',
-            'capacity'   => 'required|integer|min:1',
+            'date'     => 'required|date_format:Y-m-d',
+            'time'     => 'required|date_format:H:i',
+            'capacity' => 'required|integer|min:1',
         ]);
 
-        // Instanciar servicio Odoo con credenciales de la empresa
-        $odooService = new OdooService($company);
-        $odoo = $odooService->client();
+        logger()->info('checkAvailability called', [
+            'company_id' => $company->id,
+            'company_name' => $company->name ?? null,
+            'input' => $data,
+        ]);
 
-        $dateTimeString = $data['date'] . ' ' . $data['time'];
+        $timezone = $company->timezone ?? config('app.timezone', 'UTC');
 
-        // Rango solicitado: 2 horas a partir de la hora de inicio
-        $start = Carbon::createFromFormat('Y-m-d H:i', $dateTimeString);
-        $end = (clone $start)->addHours(2);
+        $start = Carbon::createFromFormat('Y-m-d H:i', "{$data['date']} {$data['time']}", $timezone);
+        $end   = (clone $start)->addHours(2);
+        $limit = (clone $start)->addDay()->setTime(3, 0);
 
-        // Límite superior para las búsquedas (día + 1 hasta las 03:00, como en el flujo n8n)
-        $limit = (clone $start)->addDay()->setTime(3, 0, 0);
+        $odoo = (new OdooService($company))->client();
 
-        $startStr = $start->format('Y-m-d H:i:s');
-        $limitStr = $limit->format('Y-m-d H:i:s');
+        $tables   = $this->getTables($odoo);
+        $occupied = $this->getOccupiedResources($odoo, $start, $end, $limit, $timezone);
 
-        // 1) Obtener mesas (appointment.resource)
-        $tables = $odoo->searchRead(
-            'appointment.resource',
-            null,
-            [
-                'id',
-                'display_name',
-                'resource_calendar_id',
-                'resource_id',
-                'name',
-                'active',
-                'shareable',
-                'capacity',
-            ]
-        );
-
-        // 2) Obtener reservas en curso (event_stop > start, event_stop <= limit, active = true)
-        $domainActive = new \Obuchmann\OdooJsonRpc\Odoo\Request\Arguments\Domain();
-        $domainActive
-            ->where('event_stop', '>', $startStr)
-            ->where('active', '=', true)
-            ->where('event_stop', '<=', $limitStr);
-
-        $activeReservations = $odoo->searchRead(
-            'appointment.booking.line',
-            $domainActive,
-            [
-                'id',
-                'display_name',
-                'active',
-                'appointment_resource_id',
-                'capacity_reserved',
-                'capacity_used',
-                'event_start',
-                'event_stop',
-            ]
-        );
-
-        // 3) Obtener reservas futuras/pedientes (event_start >= start, event_stop <= limit, active = true)
-        $domainPending = new \Obuchmann\OdooJsonRpc\Odoo\Request\Arguments\Domain();
-        $domainPending
-            ->where('event_start', '>=', $startStr)
-            ->where('event_stop', '<=', $limitStr)
-            ->where('active', '=', true);
-
-        $futureReservations = $odoo->searchRead(
-            'appointment.booking.line',
-            $domainPending,
-            [
-                'id',
-                'display_name',
-                'active',
-                'appointment_resource_id',
-                'capacity_reserved',
-                'capacity_used',
-                'event_start',
-                'event_stop',
-            ]
-        );
-
-        // --- Lógica de verificación de disponibilidad (replicada del flujo n8n) ---
-
-        $occupied = [];
-
-        // Helper para comprobar solapamiento de rangos
-        $overlaps = function (Carbon $a1, Carbon $a2, Carbon $b1, Carbon $b2): bool {
-            return $a1->lt($b2) && $a2->gt($b1);
-        };
-
-        // Reservas futuras
-        foreach ($futureReservations as $r) {
-            if (!empty($r['event_start']) && !empty($r['event_stop']) && !empty($r['appointment_resource_id'])) {
-                $rStart = Carbon::parse($r['event_start']);
-                $rEnd = Carbon::parse($r['event_stop']);
-
-                if ($overlaps($start, $end, $rStart, $rEnd)) {
-                    $resourceId = $r['appointment_resource_id'][0] ?? null;
-                    if ($resourceId !== null) {
-                        $occupied[$resourceId] = true;
-                    }
-                }
-            }
-        }
-
-        // Reservas en curso
-        foreach ($activeReservations as $r) {
-            if (!empty($r['event_start']) && !empty($r['event_stop']) && !empty($r['appointment_resource_id'])) {
-                $rStart = Carbon::parse($r['event_start']);
-                $rEnd = Carbon::parse($r['event_stop']);
-
-                if ($overlaps($start, $end, $rStart, $rEnd)) {
-                    $resourceId = $r['appointment_resource_id'][0] ?? null;
-                    if ($resourceId !== null) {
-                        $occupied[$resourceId] = true;
-                    }
-                }
-            }
-        }
-
-        // Mesas disponibles (las que no están en occupied)
-        $availableTables = [];
-        foreach ($tables as $t) {
-            // resource_id es un many2one -> [id, name]
-            if (empty($t['resource_id']) || !is_array($t['resource_id'])) {
-                continue;
-            }
-
-            $resourceId = $t['resource_id'][0] ?? null;
-            if ($resourceId === null) {
-                continue;
-            }
-
-            if (!isset($occupied[$resourceId])) {
-                $availableTables[] = $t;
-            }
-        }
-
-        // Ordenar por capacidad descendente
-        usort($availableTables, function (array $a, array $b) {
-            return (int)($b['capacity'] ?? 0) <=> (int)($a['capacity'] ?? 0);
-        });
-
-        // Sumar capacidad hasta cubrir la solicitada
-        $totalCapacity = 0;
-        foreach ($availableTables as $t) {
-            $totalCapacity += (int)($t['capacity'] ?? 0);
-            if ($totalCapacity >= $data['capacity']) {
-                break;
-            }
-        }
+        $availableCapacity = $this->calculateAvailableCapacity($tables, $occupied);
 
         return response()->json([
-            'available' => $totalCapacity >= $data['capacity'],
+            'available' => $availableCapacity >= (int) $data['capacity'],
         ]);
     }
 
-    /**
-     * Endpoint que replica el flujo "Fecha Actual" de n8n (sin empresa).
-     *
-     * Devuelve:
-     * - referencia_tiempo: ISO completo (UTC)
-     * - referencia_tiempo_dia: YYYY-MM-DD (UTC)
-     * - referencia_tiempo_hora: HH:MM (UTC)
-     */
-    public function currentTime(Request $request): JsonResponse
+    /* =====================================================
+     * CURRENT TIME
+     * ===================================================== */
+    public function currentTime(Company $company): JsonResponse
     {
-        $now = Carbon::now('UTC');
+        $timezone = $company->timezone ?? config('app.timezone', 'UTC');
+        $now = Carbon::now($timezone);
 
         return response()->json([
             'referencia_tiempo'      => $now->toIso8601String(),
@@ -203,35 +64,31 @@ class ReservationController extends Controller
         ]);
     }
 
-    /**
-     * Calcula una fecha calendario a partir de una expresión en lenguaje humano,
-     * replicando el flujo "Cálculo Fecha Lenguaje Humano" de n8n.
-     *
-     * Entrada (JSON):
-     * - dia: string con la expresión temporal del usuario (obligatorio)
-     * - referencia_tiempo: ISO 8601 (opcional, si no se envía se usa ahora en UTC)
-     *
-     * Respuesta:
-     * - { valido: bool, fecha: "YYYY-MM-DD" }
-     */
-    public function humanDate(Request $request): JsonResponse
+    /* =====================================================
+     * HUMAN DATE
+     * ===================================================== */
+    public function humanDate(Company $company, Request $request): JsonResponse
     {
         $data = $request->validate([
             'dia'               => 'required|string',
             'referencia_tiempo' => 'nullable|string',
         ]);
 
-        // Contexto temporal actual
+        logger()->info('humanDate called', [
+            'company_id' => $company->id,
+            'company_name' => $company->name ?? null,
+            'input' => $data,
+        ]);
+
+        $timezone = $company->timezone ?? config('app.timezone', 'UTC');
+
         $now = isset($data['referencia_tiempo'])
-            ? Carbon::parse($data['referencia_tiempo'])->utc()
-            : Carbon::now('UTC');
+            ? Carbon::parse($data['referencia_tiempo'])->setTimezone($timezone)
+            : Carbon::now($timezone);
 
-        $nowIso = $now->toIso8601String();
-
-        // Construimos el prompt igual que en n8n
         $prompt = <<<TXT
 Contexto temporal actual:
-{$nowIso}
+{$now->toIso8601String()}
 
 Expresión temporal proporcionada por el usuario:
 {$data['dia']}
@@ -241,11 +98,10 @@ TXT;
             new InputText($prompt),
         ]);
 
-        // Ejecutar acción GPT
         $action->run();
-        $output = $action->output() ?? [];
 
-        $fecha = $output['fecha'] ?? null;
+        $fecha = $action->output()['fecha'] ?? null;
+
         if (!is_string($fecha) || trim($fecha) === '') {
             return response()->json([
                 'valido' => false,
@@ -253,42 +109,14 @@ TXT;
             ], 422);
         }
 
-        // En n8n se marca válido si la fecha es >= al día actual (YYYY-MM-DD)
-        $today = $now->toDateString(); // YYYY-MM-DD
-        $valido = $fecha >= $today;
-
         return response()->json([
-            'valido' => $valido,
+            'valido' => $fecha >= $now->toDateString(),
             'fecha'  => $fecha,
         ]);
     }
 
     /**
-     * Crear una reserva en Odoo (calendar.event + appointment.booking.line),
-     * replicando el flujo "Crear reserva" de n8n.
-     *
-     * Ruta: POST /api/companies/{company}/reservations
-     *
-     * Entrada (JSON):
-     * - date: YYYY-MM-DD
-     * - time: HH:MM
-     * - capacity: int
-     * - full_name: string
-     * - phone_number: string
-     *
-     * Respuesta:
-     * - status: "ok" | "no_available_tables"
-     * - message: string
-     * - reservations: [
-     *     {
-     *       table_id,
-     *       table_capacity,
-     *       reserved_capacity,
-     *       start,
-     *       stop
-     *     },
-     *   ]
-     * - event_id: id de calendar.event creado (si aplica)
+     * Create a reservation based on provided data and Odoo logic.
      */
     public function createReservation(Company $company, Request $request): JsonResponse
     {
@@ -300,184 +128,299 @@ TXT;
             'phone_number' => 'required|string|max:50',
         ]);
 
+        logger()->info('createReservation called', [
+            'company_id' => $company->id,
+            'company_name' => $company->name ?? null,
+            'input' => $data,
+        ]);
+
+        $timezone = $company->timezone ?? config('app.timezone', 'UTC');
         $capacity = (int) $data['capacity'];
 
-        // Instanciar servicio Odoo con credenciales de la empresa
-        $odooService = new OdooService($company);
-        $odoo = $odooService->client();
+        $odoo = (new OdooService($company))->client();
 
-        // 1) Obtener mesas (appointment.resource)
-        $tables = $odoo->searchRead(
-            'appointment.resource',
-            null,
-            [
-                'id',
-                'display_name',
-                'resource_id',
-                'resource_calendar_id',
-                'name',
-                'active',
-                'capacity',
-                'shareable',
-                'description',
-                'appointment_type_ids',
-            ]
+        // 1️⃣ Obtener mesas activas
+        $tables = $this->normalizeOdooRows(
+            $odoo->searchRead(
+                'appointment.resource',
+                null,
+                ['id', 'resource_id', 'capacity', 'active']
+            )
         );
 
-        // Filtramos sólo mesas activas con capacidad válida
-        $tables = array_values(array_filter($tables, function (array $t) {
-            $active = $t['active'] ?? true;
-            $capacity = (int) ($t['capacity'] ?? 0);
-            return $active && $capacity > 0;
-        }));
+        $tables = array_values(array_filter($tables, fn ($t) =>
+            ($t['active'] ?? true) && (int) ($t['capacity'] ?? 0) > 0
+        ));
 
-        // --- Buscar recursos (mesas) replicando el código JS del flujo n8n ---
 
-        // Duración: 30 minutos por cada 2 personas (redondeando hacia arriba)
-        $minutes = (int) ceil($capacity / 2) * 30;
+        $start = Carbon::createFromFormat(
+            'Y-m-d H:i',
+            "{$data['date']} {$data['time']}",
+            $timezone
+        );
 
-        // Fechas según la zona horaria de la app
-        $tz = config('app.timezone', 'UTC');
-        $start = Carbon::createFromFormat('Y-m-d H:i', "{$data['date']} {$data['time']}", $tz);
-        $stop = (clone $start)->addMinutes($minutes);
+        $stop = (clone $start)->addMinutes(90);
 
-        // Formato YYYY-MM-DD HH:mm:ss para Odoo
         $startStr = $start->format('Y-m-d H:i:s');
-        $stopStr = $stop->format('Y-m-d H:i:s');
+        $stopStr  = $stop->format('Y-m-d H:i:s');
 
+        // 3️⃣ Selección de mesas (lógica n8n)
         $selectedTables = [];
-        $status = 'ok';
-        $message = 'Reserva creada correctamente';
 
-        // 1️⃣ Mesa con capacidad exacta
-        $exactTable = null;
+        // Exacta
         foreach ($tables as $t) {
-            if ((int) ($t['capacity'] ?? 0) === $capacity) {
-                $exactTable = $t;
+            if ((int) $t['capacity'] === $capacity) {
+                $selectedTables = [$t];
                 break;
             }
         }
 
-        if ($exactTable) {
-            $selectedTables = [$exactTable];
-        } else {
-            // 2️⃣ Mesa única más grande pero cercana
-            $biggerTables = array_filter($tables, function (array $t) use ($capacity) {
-                return (int) ($t['capacity'] ?? 0) > $capacity;
-            });
+        // Mesa única mayor
+        if (empty($selectedTables)) {
+            $bigger = array_filter($tables, fn ($t) => (int) $t['capacity'] > $capacity);
+            usort($bigger, fn ($a, $b) => (int) $a['capacity'] <=> (int) $b['capacity']);
 
-            usort($biggerTables, function (array $a, array $b) {
-                return (int) ($a['capacity'] ?? 0) <=> (int) ($b['capacity'] ?? 0);
-            });
-
-            if (!empty($biggerTables)) {
-                $selectedTables = [reset($biggerTables)];
-            } else {
-                // 3️⃣ Combinar mesas más pequeñas (último recurso)
-                $smallerTables = array_filter($tables, function (array $t) use ($capacity) {
-                    return (int) ($t['capacity'] ?? 0) < $capacity;
-                });
-
-                usort($smallerTables, function (array $a, array $b) {
-                    return (int) ($b['capacity'] ?? 0) <=> (int) ($a['capacity'] ?? 0);
-                });
-
-                $accumulatedCapacity = 0;
-                foreach ($smallerTables as $t) {
-                    if ($accumulatedCapacity >= $capacity) {
-                        break;
-                    }
-
-                    $selectedTables[] = $t;
-                    $accumulatedCapacity += (int) ($t['capacity'] ?? 0);
-                }
-
-                if ($accumulatedCapacity < $capacity) {
-                    $status = 'no_available_tables';
-                    $message = 'No hay mesas disponibles para la capacidad solicitada';
-                    return response()->json([
-                        'status'       => $status,
-                        'message'      => $message,
-                        'reservations' => [],
-                    ], 422);
-                }
+            if (!empty($bigger)) {
+                $selectedTables = [reset($bigger)];
             }
         }
 
-        // 4️⃣ Asignar capacidad reservada por mesa
-        $remainingCapacity = $capacity;
+        // Combinar mesas
+        if (empty($selectedTables)) {
+            $smaller = array_filter($tables, fn ($t) => (int) $t['capacity'] < $capacity);
+            usort($smaller, fn ($a, $b) => (int) $b['capacity'] <=> (int) $a['capacity']);
+
+            $sum = 0;
+            foreach ($smaller as $t) {
+                if ($sum >= $capacity) {
+                    break;
+                }
+
+                $selectedTables[] = $t;
+                $sum += (int) $t['capacity'];
+            }
+
+            if ($sum < $capacity) {
+                return response()->json([
+                    'status'       => 'no_available_tables',
+                    'message'      => 'No hay mesas disponibles para la capacidad solicitada',
+                    'reservations' => [],
+                ], 422);
+            }
+        }
+
+        // 4️⃣ Asignar capacidad exacta
+        $remaining = $capacity;
         $reservations = [];
 
         foreach ($selectedTables as $t) {
-            $tableCapacity = (int) ($t['capacity'] ?? 0);
-            $reserved = min($tableCapacity, $remainingCapacity);
-            $remainingCapacity -= $reserved;
+            $reserved = min((int) $t['capacity'], $remaining);
+            $remaining -= $reserved;
 
             $reservations[] = [
                 'table_id'          => $t['id'],
-                'table_capacity'    => $tableCapacity,
+                'table_capacity'    => (int) $t['capacity'],
                 'reserved_capacity' => $reserved,
                 'start'             => $startStr,
                 'stop'              => $stopStr,
             ];
         }
 
-        // Seguridad: si por alguna razón no se cubre la capacidad, devolvemos error
-        if ($remainingCapacity > 0) {
+        if ($remaining > 0) {
             return response()->json([
                 'status'       => 'no_available_tables',
-                'message'      => 'No se pudo asignar toda la capacidad solicitada',
+                'message'      => 'No se pudo asignar la capacidad completa',
                 'reservations' => $reservations,
             ], 422);
         }
 
-        // 5️⃣ Crear evento en calendar.event
+        // 5️⃣ Crear evento
         try {
-            $notesExtra = count($reservations) > 1
-                ? "\n\nEs parte de una reserva de {$capacity} personas"
-                : '';
+            $notes = 'Teléfono ' . $data['phone_number'];
+
+            if (count($reservations) > 1) {
+                $notes .= "\n\nEs parte de una reserva de {$capacity} personas";
+            }
 
             $eventId = $odoo->create('calendar.event', [
                 'name'                => 'Reserva ' . $data['full_name'],
                 'start'               => $startStr,
                 'stop'                => $stopStr,
-                'appointment_type_id' => 2,
-                'notes'               => 'Teléfono ' . $data['phone_number'] . $notesExtra,
+                'appointment_type_id' => 1,
+                'appointment_status'  => $company->appointment_status ?? 'request',
+                'notes'               => $notes,
             ]);
         } catch (\Throwable $e) {
             return response()->json([
                 'status'  => 'error_creating_event',
-                'message' => 'Error creando el evento en Odoo: ' . $e->getMessage(),
+                'message' => $e->getMessage(),
             ], 500);
         }
 
-        // 6️⃣ Crear booking lines (appointment.booking.line) para cada mesa
+        // 6️⃣ Crear booking lines
         try {
-            foreach ($reservations as &$reservation) {
+            foreach ($reservations as &$r) {
                 $bookingId = $odoo->create('appointment.booking.line', [
-                    'appointment_resource_id' => $reservation['table_id'],
+                    'appointment_resource_id' => $r['table_id'],
                     'appointment_type_id'     => 2,
-                    'capacity_reserved'       => $reservation['reserved_capacity'],
+                    'capacity_reserved'       => $r['reserved_capacity'],
                     'calendar_event_id'       => $eventId,
                 ]);
 
-                $reservation['booking_id'] = $bookingId;
+                $r['booking_id'] = $bookingId;
             }
-            unset($reservation);
+            unset($r);
         } catch (\Throwable $e) {
             return response()->json([
                 'status'       => 'error_creating_booking',
-                'message'      => 'Error creando las reservas en Odoo: ' . $e->getMessage(),
+                'message'      => $e->getMessage(),
                 'event_id'     => $eventId,
                 'reservations' => $reservations,
             ], 500);
         }
 
+        // 7️⃣ Enviar plantilla de WhatsApp de confirmación (no bloqueante)
+        try {
+            $this->sendWhatsAppConfirmation($company, $data, $start, $capacity);
+        } catch (\Throwable $e) {
+            logger()->warning('WhatsApp template send failed', [
+                'company_id' => $company->id,
+                'error'      => $e->getMessage(),
+            ]);
+        }
+
         return response()->json([
-            'status'       => $status,
-            'message'      => $message,
+            'status'       => 'ok',
+            'message'      => 'Reserva creada correctamente',
             'event_id'     => $eventId,
             'reservations' => $reservations,
         ]);
+    }
+
+    /* =====================================================
+     * PRIVATE HELPERS
+     * ===================================================== */
+
+    private function getTables($odoo): array
+    {
+        $rows = $odoo->searchRead(
+            'appointment.resource',
+            null,
+            ['id', 'resource_id', 'capacity', 'active']
+        );
+
+        return $this->normalizeOdooRows($rows);
+    }
+
+    private function getOccupiedResources($odoo, Carbon $start, Carbon $end, Carbon $limit, string $timezone): array
+    {
+        $domain = (new \Obuchmann\OdooJsonRpc\Odoo\Request\Arguments\Domain())
+            ->where('active', '=', true)
+            ->where('event_stop', '>', $start->format('Y-m-d H:i:s'))
+            ->where('event_stop', '<=', $limit->format('Y-m-d H:i:s'));
+
+        $reservations = $this->normalizeOdooRows(
+            $odoo->searchRead(
+                'appointment.booking.line',
+                $domain,
+                ['appointment_resource_id', 'event_start', 'event_stop']
+            )
+        );
+
+        $occupied = [];
+
+        foreach ($reservations as $r) {
+            if (
+                empty($r['appointment_resource_id']) ||
+                empty($r['event_start']) ||
+                empty($r['event_stop'])
+            ) {
+                continue;
+            }
+
+            if (
+                $this->overlaps(
+                    $start,
+                    $end,
+                    Carbon::parse($r['event_start'], $timezone),
+                    Carbon::parse($r['event_stop'], $timezone)
+                )
+            ) {
+                $occupied[$r['appointment_resource_id'][0]] = true;
+            }
+        }
+
+        return $occupied;
+    }
+
+    private function calculateAvailableCapacity(array $tables, array $occupied): int
+    {
+        $available = array_filter($tables, function ($t) use ($occupied) {
+            $resourceId = $t['resource_id'][0] ?? null;
+
+            return ($t['active'] ?? true)
+                && $resourceId
+                && !isset($occupied[$resourceId]);
+        });
+
+        usort($available, function ($a, $b) {
+            return (int) ($b['capacity'] ?? 0) <=> (int) ($a['capacity'] ?? 0);
+        });
+
+        return array_reduce(
+            $available,
+            fn ($sum, $t) => $sum + (int) ($t['capacity'] ?? 0),
+            0
+        );
+    }
+
+    private function overlaps(
+        Carbon $aStart,
+        Carbon $aEnd,
+        Carbon $bStart,
+        Carbon $bEnd
+    ): bool {
+        return $aStart->lt($bEnd) && $aEnd->gt($bStart);
+    }
+
+    private function normalizeOdooRows(array $rows): array
+    {
+        return array_map(fn ($row) => (array) $row, $rows);
+    }
+
+    /**
+     * Enviar datos al webhook de WhatsApp (n8n) para la confirmación de reserva.
+     *
+     * Replica la intención del nodo "Enviar mensaje a usuario" en n8n:
+     *   full_name, phone_number, date, time, capacity.
+     * La URL base se configura por empresa y se le añade el sufijo "-test"
+     * automáticamente si el entorno no es producción.
+     */
+    private function sendWhatsAppConfirmation(Company $company, array $data, Carbon $start, int $capacity): void
+    {
+        $url = rtrim((string) $company->whatsapp_webhook_url, '/');
+
+        $phone = preg_replace('/\s+/', '', $data['phone_number']);
+        $defaultCc = '+34';
+        if (!str_starts_with($phone, '+')) {
+            $phone = $defaultCc . $phone;
+        }
+
+        $payload = [
+            'full_name'    => $data['full_name'],
+            'phone_number' => $phone,
+            'date'         => $start->format('Y-m-d'),
+            'time'         => $start->format('H:i'),
+            'capacity'     => $capacity,
+        ];
+
+        logger()->info('Enviando datos a webhook - reserva', [
+            'url' => $url,
+            'company_id'   => $company->id,
+            'company_name' => $company->name ?? null,
+            ...$payload,
+        ]);
+
+        Http::post($url, $payload);
     }
 }
