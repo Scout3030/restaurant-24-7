@@ -5,6 +5,7 @@ namespace App\Nova;
 use Laravel\Nova\Fields\ID;
 use Laravel\Nova\Fields\Text;
 use Laravel\Nova\Fields\Select;
+use Laravel\Nova\Panel;
 use Laravel\Nova\Http\Requests\NovaRequest;
 
 class Company extends Resource
@@ -47,57 +48,60 @@ class Company extends Resource
         return [
             ID::make()->sortable(),
 
-            Text::make('Nombre', 'name')
-                ->sortable()
-                ->rules('required', 'max:255'),
+            new Panel('Información general', [
+                Text::make('Nombre', 'name')
+                    ->sortable()
+                    ->rules('required', 'max:255'),
 
-            Text::make('Slug', 'slug')
-                ->rules('required', 'max:255')
-                ->creationRules('unique:companies,slug')
-                ->updateRules('unique:companies,slug,{{resourceId}}')
-                ->help('Identificador único público de la empresa (usado en las URLs de la API).'),
+                Text::make('Slug', 'slug')
+                    ->rules('required', 'max:255')
+                    ->creationRules('unique:companies,slug')
+                    ->updateRules('unique:companies,slug,{{resourceId}}'),
 
-            Text::make('Odoo Database', 'odoo_database')
-                ->rules('required', 'max:255')
-                ->hideFromIndex(),
+                Select::make('Timezone', 'timezone')
+                    ->options([
+                        'Europe/Madrid'   => 'Europa/Madrid',
+                        'Atlantic/Canary' => 'Atlántico/Canarias',
+                    ])
+                    ->displayUsingLabels()
+                    ->rules('required')
+                    ->default('Atlantic/Canary'),
 
-            Text::make('Odoo Host', 'odoo_host')
-                ->rules('required', 'max:255')
-                ->hideFromIndex(),
+                Select::make('Estado por defecto de la reserva', 'appointment_status')
+                    ->options([
+                        'request' => 'Solicitado',
+                        'booked'  => 'Reservado',
+                    ])
+                    ->displayUsingLabels()
+                    ->rules('required')
+                    ->default('request'),
 
-            Text::make('Odoo Username', 'odoo_username')
-                ->rules('required', 'max:255')
-                ->hideFromIndex(),
+                Text::make('WhatsApp Webhook URL', 'whatsapp_webhook_url')
+                    ->rules('required', 'url')
+                    ->hideFromIndex(),
 
-            Text::make('Odoo Password', 'odoo_password')
-                ->rules('required', 'max:255')
-                ->onlyOnForms(),
+                Text::make('Número de teléfono asignado', 'assigned_phone_number')
+                    ->nullable()
+                    ->hideFromIndex(),
+            ]),
 
-            Select::make('Timezone', 'timezone')
-                ->options([
-                    'Europe/Madrid'    => 'Europa/Madrid',
-                    'Atlantic/Canary'  => 'Atlántico/Canarias',
-                ])
-                ->displayUsingLabels()
-                ->rules('required')
-                ->default('Atlantic/Canary'),
+            new Panel('Conexión Odoo', [
+                Text::make('Odoo Database', 'odoo_database')
+                    ->rules('required', 'max:255')
+                    ->hideFromIndex(),
 
-            Text::make('WhatsApp Webhook URL', 'whatsapp_webhook_url')
-                ->rules('required', 'url')
-                ->hideFromIndex(),
+                Text::make('Odoo Host', 'odoo_host')
+                    ->rules('required', 'max:255')
+                    ->hideFromIndex(),
 
-            Text::make('Assigned Phone Number', 'assigned_phone_number')
-                ->nullable()
-                ->hideFromIndex(),
+                Text::make('Odoo Username', 'odoo_username')
+                    ->rules('required', 'max:255')
+                    ->hideFromIndex(),
 
-            Select::make('Estado por defecto de la reserva', 'appointment_status')
-                ->options([
-                    'request' => 'Solicitado',
-                    'booked'  => 'Reservado',
-                ])
-                ->displayUsingLabels()
-                ->rules('required')
-                ->default('request'),
+                Text::make('Odoo Password', 'odoo_password')
+                    ->rules('required', 'max:255')
+                    ->onlyOnForms(),
+            ]),
         ];
     }
 
