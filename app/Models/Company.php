@@ -22,6 +22,7 @@ class Company extends Model
         'odoo_username',
         'odoo_password',
         'timezone',
+        'api_token',
         'whatsapp_webhook_url',
         'assigned_phone_number',
         'appointment_status',

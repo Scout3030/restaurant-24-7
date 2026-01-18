@@ -64,6 +64,10 @@ class Company extends Resource
                     ->creationRules('unique:companies,slug')
                     ->updateRules('unique:companies,slug,{{resourceId}}'),
 
+                Text::make('API Token', 'api_token')
+                    ->rules('required')
+                    ->hideFromIndex(),
+
                 Select::make('Timezone', 'timezone')
                     ->options([
                         'Europe/Madrid'   => 'Europa/Madrid',
