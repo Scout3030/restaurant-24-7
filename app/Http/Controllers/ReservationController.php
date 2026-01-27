@@ -84,12 +84,36 @@ class ReservationController extends Controller
             ? Carbon::parse($data['referencia_tiempo'])->setTimezone($timezone)
             : Carbon::now($timezone);
 
-        $prompt = <<<TXT
-Contexto temporal actual:
-{$now->toIso8601String()}
+        $now->locale('es');
 
-Expresión temporal proporcionada por el usuario:
-{$data['dia']}
+        $hoyNatural = $now->translatedFormat('l d \\d\\e F \\d\\e Y');
+        $hoyIso     = $now->format('Y-m-d');
+
+        $prompt = <<<TXT
+Si hoy es {$hoyNatural} (fecha ISO: {$hoyIso}).
+
+Tarea:
+- Interpreta la expresión de día proporcionada y calcula la fecha de calendario correspondiente.
+- Devuelve SOLO la fecha en formato ISO `YYYY-MM-DD`.
+
+Reglas (muy importantes):
+- "hoy" => {$hoyIso}
+- "mañana" => hoy + 1 día
+- "pasado mañana" => hoy + 2 días
+- "este <día de la semana>" => el próximo o mismo <día de la semana> a partir de HOY. Si HOY es martes, "este domingo" es el domingo más cercano en el futuro (NO el sábado anterior).
+  Ejemplo: si hoy es martes 2026-01-27, "este domingo" => 2026-02-01.
+  Ejemplo: si hoy es martes 2026-01-27, "este viernes" => 2026-01-30.
+  Ejemplo: si hoy es martes 2026-01-27, "este sábado" => 2026-01-31.
+- "próximo <día de la semana>" => el <día de la semana> de la semana siguiente (al menos 7 días después de hoy).
+
+Entrada (texto exacto, no lo reformules):
+"{$data['dia']}"
+
+Formato de salida (obligatorio, sin texto adicional):
+
+{
+  "fecha": "YYYY-MM-DD"
+}
 TXT;
 
         $action = new HumanDateAction([
