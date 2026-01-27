@@ -54,6 +54,11 @@ class ReservationController extends Controller
      * ===================================================== */
     public function currentTime(Company $company): JsonResponse
     {
+        logger()->info('currentTime called', [
+            'company_id' => $company->id,
+            'company_name' => $company->name ?? null,
+        ]);
+
         $timezone = $company->timezone ?? config('app.timezone', 'UTC');
         $now = Carbon::now($timezone);
 

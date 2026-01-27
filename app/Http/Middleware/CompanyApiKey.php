@@ -16,10 +16,16 @@ class CompanyApiKey
      */
     public function handle(Request $request, Closure $next): JsonResponse|\Illuminate\Http\Response|\Illuminate\Http\RedirectResponse
     {
+
         /** @var Company|null $company */
         $company = $request->route('company');
 
         $providedKey = $request->header('X-API-Key');
+
+        logger()->info('Middleware Called:', [
+            'company' => $company,
+            'providedKey' => $providedKey
+        ]);
 
         if (!$company || !$company->api_token || !$providedKey || !hash_equals($company->api_token, $providedKey)) {
             return response()->json([
