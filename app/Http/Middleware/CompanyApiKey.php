@@ -38,6 +38,10 @@ class CompanyApiKey
             ], 401);
         }
 
+        logger()->info('Middleware Passed:', [
+            'company' => $company->name
+        ]);
+
         return $next($request);
     }
 }
