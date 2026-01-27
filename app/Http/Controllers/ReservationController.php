@@ -25,9 +25,7 @@ class ReservationController extends Controller
             'capacity' => 'required|integer|min:1',
         ]);
 
-        logger()->info('checkAvailability called', [
-            'company_id' => $company->id,
-            'company_name' => $company->name ?? null,
+        logger()->info($company->name. ' checkAvailability called', [
             'input' => $data,
         ]);
 
@@ -54,10 +52,7 @@ class ReservationController extends Controller
      * ===================================================== */
     public function currentTime(Company $company): JsonResponse
     {
-        logger()->info('currentTime called', [
-            'company_id' => $company->id,
-            'company_name' => $company->name ?? null,
-        ]);
+        logger()->info($company->name. ' currentTime called');
 
         $timezone = $company->timezone ?? config('app.timezone', 'UTC');
         $now = Carbon::now($timezone);
@@ -79,9 +74,7 @@ class ReservationController extends Controller
             'referencia_tiempo' => 'nullable|string',
         ]);
 
-        logger()->info('humanDate called', [
-            'company_id' => $company->id,
-            'company_name' => $company->name ?? null,
+        logger()->info($company->name. ' humanDate called', [
             'input' => $data,
         ]);
 
@@ -133,9 +126,7 @@ TXT;
             'phone_number' => 'required|string|max:50',
         ]);
 
-        logger()->info('createReservation called', [
-            'company_id' => $company->id,
-            'company_name' => $company->name ?? null,
+        logger()->info($company->name. ' createReservation called', [
             'input' => $data,
         ]);
 
