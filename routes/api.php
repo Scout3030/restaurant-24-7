@@ -21,7 +21,7 @@ Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
 
 Route::middleware('company.api')->group(function () {
     Route::get('/reservaciones/{company}/fecha-actual', [ReservationController::class, 'currentTime']);
-    Route::get('/reservaciones/{company}/fecha-lenguaje-humano', [ReservationController::class, 'humanDate']);
-    Route::get('/reservaciones/{company}/verificar-disponibilidad', [ReservationController::class, 'checkAvailability']);
-    Route::get('/reservaciones/{company}/crear-reserva', [ReservationController::class, 'createReservation']);
+    Route::post('/reservaciones/{company}/fecha-lenguaje-humano', [ReservationController::class, 'humanDate']);
+    Route::post('/reservaciones/{company}/verificar-disponibilidad', [ReservationController::class, 'checkAvailability']);
+    Route::post('/reservaciones/{company}/crear-reserva', [ReservationController::class, 'createReservation']);
 });
