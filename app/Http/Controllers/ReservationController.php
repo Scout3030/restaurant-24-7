@@ -20,7 +20,7 @@ class ReservationController extends Controller
     public function checkAvailability(Company $company, Request $request): JsonResponse
     {
         $data = $request->validate([
-            'date'     => 'required|date_format:Y-m-d',
+            'date'     => 'required|date|after_or_equal:today',
             'time'     => 'required|date_format:H:i',
             'capacity' => 'required|integer|min:1',
         ]);
@@ -126,7 +126,7 @@ TXT;
     public function createReservation(Company $company, Request $request): JsonResponse
     {
         $data = $request->validate([
-            'date'         => 'required|date_format:Y-m-d',
+            'date'         => 'required|date|after_or_equal:today',
             'time'         => 'required|date_format:H:i',
             'capacity'     => 'required|integer|min:1',
             'full_name'    => 'required|string|max:255',
