@@ -23,11 +23,16 @@ class CompanyApiKey
         $providedKey = $request->header('X-API-Key');
 
         logger()->info('Middleware Called:', [
-            'company' => $company,
             'providedKey' => $providedKey
         ]);
 
-        if (!$company || !$company->api_token || !$providedKey || !hash_equals($company->api_token, $providedKey)) {
+        if (!$company || !$company->api_token || !$providedKey || $company->api_token !== $providedKey) {
+
+            logger()->info('Unauthorized', [
+                'company' => $company->api_token,
+                'providedKey' => $providedKey
+            ]);
+
             return response()->json([
                 'message' => 'Unauthorized',
             ], 401);
