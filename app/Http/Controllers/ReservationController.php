@@ -128,12 +128,16 @@ TXT;
             return response()->json([
                 'valido' => false,
                 'fecha'  => null,
+                'dia'  => null,
             ], 422);
         }
+
+        $fechaCarbon = Carbon::createFromFormat('Y-m-d', $fecha, $timezone)->locale('es');
 
         return response()->json([
             'valido' => $fecha >= $now->toDateString(),
             'fecha'  => $fecha,
+            'dia'    => $fechaCarbon->translatedFormat('l'),
         ]);
     }
 
