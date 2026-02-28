@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Gpt\HumanDateAction;
 use App\Models\Company;
 use App\Services\OdooService;
+use App\Services\WhatsAppBusinessCloudService;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -266,7 +267,7 @@ TXT;
                 'name'                => 'Reserva ' . $data['full_name'],
                 'start'               => $startStr,
                 'stop'                => $stopStr,
-                'appointment_type_id' => 1,
+                'appointment_type_id' => $company->appointment_type_id,
                 'appointment_status'  => $company->appointment_status ?? 'request',
                 'notes'               => $notes,
             ]);
@@ -299,9 +300,24 @@ TXT;
             ], 500);
         }
 
-        // 7️⃣ Enviar plantilla de WhatsApp de confirmación (no bloqueante)
+        // Enviar plantilla de WhatsApp de reserva
         try {
-            $this->sendWhatsAppConfirmation($company, $data, $start, $capacity);
+            $phoneNumber = config('app.env') === 'production' ? $data['phone_number'] : '+34686649345';
+            $date = Carbon::createFromFormat('Y-m-d', $data['date'])->format('d/m/Y');
+            $time = Carbon::createFromFormat('H:i', $data['time'])->format('H:i');
+
+            (new WhatsAppBusinessCloudService)->sendTemplate(
+                phoneNumber: $phoneNumber,
+                templateName: $company->whatsapp_reserved_template,
+                languageCode: 'es',
+                bodyParameters: [
+                    $data['full_name'], // nombre cliente
+                    $company->name, // nombre restaurant
+                    $capacity, // personas
+                    $date, // fecha
+                    $time, // hora
+                ]
+            );
         } catch (\Throwable $e) {
             logger()->warning('WhatsApp template send failed', [
                 'company_id' => $company->id,
@@ -408,39 +424,58 @@ TXT;
         return array_map(fn ($row) => (array) $row, $rows);
     }
 
-    /**
-     * Enviar datos al webhook de WhatsApp (n8n) para la confirmación de reserva.
-     *
-     * Replica la intención del nodo "Enviar mensaje a usuario" en n8n:
-     *   full_name, phone_number, date, time, capacity.
-     * La URL base se configura por empresa y se le añade el sufijo "-test"
-     * automáticamente si el entorno no es producción.
-     */
-    private function sendWhatsAppConfirmation(Company $company, array $data, Carbon $start, int $capacity): void
+    public function confirmReservation(Company $company, Request $request): JsonResponse
     {
-        $url = rtrim((string) $company->whatsapp_webhook_url, '/');
+        $bookingId = $request->input('_id');
 
-        $phone = preg_replace('/\s+/', '', $data['phone_number']);
-        $defaultCc = '+34';
-        if (!str_starts_with($phone, '+')) {
-            $phone = $defaultCc . $phone;
+        if($request->appointment_status == 'booked') {
+            $odoo = (new OdooService($company))->client();
+            $event = $odoo
+                ->model('calendar.event')
+                ->where('id', '=', $bookingId)
+                ->first();
+
+            $notes = $event->notes ?? '';
+
+            // 1. Remove HTML tags
+            $text = trim(strip_tags($notes));
+
+            // 2. Extract digits (phone)
+            preg_match('/(\d{6,15})/', $text, $matches);
+
+            $phoneNumber = $matches[1] ?? null;
+
+            // 3. Normalize (Spain default)
+            if ($phoneNumber && !str_starts_with($phoneNumber, '+')) {
+                $phoneNumber = '+34' . $phoneNumber;
+            }
+
+            $phoneNumber = config('app.env') === 'production' ? $phoneNumber : '+34686649345';
+
+            $start = Carbon::createFromFormat('Y-m-d H:i:s', $event->start);
+
+            $date = $start->format('d/m/Y');   // 04/03/2026
+            $time = $start->format('H:i');     // 09:00
+
+            $displayName = $event->display_name ?? '';
+
+            // Eliminar la palabra "Reserva" (solo al inicio)
+            $name = trim(preg_replace('/^Reserva\s+/i', '', $displayName));
+
+            (new WhatsAppBusinessCloudService)->sendTemplate(
+                phoneNumber: $phoneNumber,
+                templateName: $company->whatsapp_confirmed_template,
+                languageCode: 'es',
+                bodyParameters: [
+                    $name, // nombre cliente
+                    $event->total_capacity_reserved, // personas
+                    $date, // fecha
+                    $time, // hora
+                    $company->name // nombre restaurant
+                ]
+            );
         }
 
-        $payload = [
-            'full_name'    => $data['full_name'],
-            'phone_number' => $phone,
-            'date'         => $start->format('Y-m-d'),
-            'time'         => $start->format('H:i'),
-            'capacity'     => $capacity,
-        ];
-
-        logger()->info('Enviando datos a webhook - reserva', [
-            'url' => $url,
-            'company_id'   => $company->id,
-            'company_name' => $company->name ?? null,
-            ...$payload,
-        ]);
-
-        Http::post($url, $payload);
+        return response()->json('ok');
     }
 }

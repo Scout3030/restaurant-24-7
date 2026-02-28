@@ -86,10 +86,6 @@ class Company extends Resource
                     ->rules('required')
                     ->default('request'),
 
-                Text::make('WhatsApp Webhook URL', 'whatsapp_webhook_url')
-                    ->rules('required', 'url')
-                    ->hideFromIndex(),
-
                 Text::make('Número de teléfono asignado', 'assigned_phone_number')
                     ->nullable()
                     ->hideFromIndex(),
@@ -111,6 +107,29 @@ class Company extends Resource
                 Text::make('Odoo Password', 'odoo_password')
                     ->rules('required', 'max:255')
                     ->onlyOnForms(),
+
+                Select::make('Id de calendario', 'appointment_type_id')
+                    ->options([
+                        1   => 1,
+                        2   => 2,
+                        3   => 3,
+                        4   => 4,
+                        5   => 5,
+                    ])
+                    ->displayUsingLabels()
+                    ->help('Id de calendario en odoo')
+                    ->rules('required')
+                    ->default(1),
+            ]),
+
+            new Panel('WhatsApp', [
+                Text::make('Plantilla reserva', 'whatsapp_reserved_template')
+                    ->rules('required', 'max:255')
+                    ->hideFromIndex(),
+
+                Text::make('Plantilla confirmación', 'whatsapp_confirmed_template')
+                    ->rules('required', 'max:255')
+                    ->hideFromIndex(),
             ]),
         ];
     }

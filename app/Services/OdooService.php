@@ -6,6 +6,7 @@ use App\Models\Company;
 use Obuchmann\OdooJsonRpc\Odoo;
 use Obuchmann\OdooJsonRpc\Odoo\Config;
 
+// https://github.com/obuchmann/laravel-odoo-api
 class OdooService
 {
     protected Odoo $odoo;
