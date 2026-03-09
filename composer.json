@@ -13,7 +13,7 @@
         "laravel/sanctum": "^3.3",
         "laravel/tinker": "^2.8",
         "maltekuhr/laravel-gpt": "^0.1.6",
-        "missael-anda/laravel-whatsapp": "^0.8.6",
+        "missael-anda/laravel-whatsapp": "dev-master as 0.8.6",
         "obuchmann/odoo-jsonrpc": "^1.9",
         "php-junior/nova-logs": "^1.1"
     },
@@ -30,6 +30,10 @@
         {
             "type": "composer",
             "url": "https://nova.laravel.com"
+        },
+        {
+            "type": "vcs",
+            "url": "ssh://git@github.com/the-web-artisan/laravel-whatsapp.git"
         }
     ],
     "autoload": {
