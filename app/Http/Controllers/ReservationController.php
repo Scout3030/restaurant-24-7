@@ -430,12 +430,7 @@ TXT;
 
     public function confirmReservation(Company $company, Request $request): JsonResponse
     {
-        logger()->info('confirmReservation called', $request->all());
-        logger()->info('request origin', [
-            'origin' => $request->headers->get('origin'),
-            'referer' => $request->headers->get('referer'),
-            'ip' => $request->ip(),
-        ]);
+        logger()->info('confirmReservation called', $request->input());
 
         $bookingId = $request->input('_id');
 
