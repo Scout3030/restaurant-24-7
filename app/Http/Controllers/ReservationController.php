@@ -430,6 +430,8 @@ TXT;
 
     public function confirmReservation(Company $company, Request $request): JsonResponse
     {
+        logger()->info('confirmReservation called', $request->input());
+        
         $bookingId = $request->input('_id');
 
         if($request->appointment_status == 'booked') {
