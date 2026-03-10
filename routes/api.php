@@ -24,5 +24,6 @@ Route::middleware('company.api')->group(function () {
     Route::post('/reservaciones/{company}/fecha-lenguaje-humano', [ReservationController::class, 'humanDate']);
     Route::post('/reservaciones/{company}/verificar-disponibilidad', [ReservationController::class, 'checkAvailability']);
     Route::post('/reservaciones/{company}/crear-reserva', [ReservationController::class, 'createReservation']);
-    Route::post('/reservaciones/{company}/confirmar-reserva', [ReservationController::class, 'confirmReservation']);
 });
+
+Route::post('/reservaciones/{company}/confirmar-reserva', [ReservationController::class, 'confirmReservation']);
